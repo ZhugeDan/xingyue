@@ -1,0 +1,7 @@
+Project: Niece's Growth Record Website
+Tech Stack: Next.js 14 (App Router), Tailwind CSS, Prisma, PostgreSQL.
+Style: Cute, warm, timeline-based.
+Rules:
+1. Always use TypeScript.
+2. Use 'lucide-react' for icons.
+3. Comments should be in Chinese.

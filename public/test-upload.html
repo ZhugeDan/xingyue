@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Test</title>
+</head>
+<body>
+    <h1>Upload Test</h1>
+    <input type="file" id="fileInput" accept="image/*,video/*">
+    <button onclick="testUpload()">Test Upload</button>
+    <div id="result"></div>
+
+    <script>
+        async function testUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            const resultDiv = document.getElementById('result');
+
+            if (!file) {
+                resultDiv.innerHTML = '请选择一个文件';
+                return;
+            }
+
+            resultDiv.innerHTML = '开始测试...';
+
+            try {
+                // 第一步：获取签名URL
+                resultDiv.innerHTML += '<br>步骤1: 获取签名URL...';
+                const response = await fetch(`/api/upload/auth?filename=${encodeURIComponent(file.name)}`);
+                const authData = await response.json();
+                
+                resultDiv.innerHTML += '<br>API响应: ' + JSON.stringify(authData, null, 2);
+
+                if (!authData.success) {
+                    throw new Error(authData.error || '获取签名失败');
+                }
+
+                const { uploadUrl, fileUrl } = authData;
+                resultDiv.innerHTML += '<br>上传URL: ' + uploadUrl;
+
+                // 第二步：上传文件到COS
+                resultDiv.innerHTML += '<br>步骤2: 上传文件到COS...';
+                
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': file.type,
+                    },
+                    body: file
+                });
+
+                resultDiv.innerHTML += '<br>上传响应状态: ' + uploadResponse.status;
+                resultDiv.innerHTML += '<br>上传响应OK: ' + uploadResponse.ok;
+
+                if (!uploadResponse.ok) {
+                    const errorText = await uploadResponse.text();
+                    throw new Error('上传失败: ' + errorText);
+                }
+
+                resultDiv.innerHTML += '<br>✅ 上传成功！';
+                resultDiv.innerHTML += '<br>文件URL: ' + fileUrl;
+
+            } catch (error) {
+                resultDiv.innerHTML += '<br>❌ 错误: ' + error.message;
+                console.error('Upload error:', error);
+            }
+        }
+    </script>
+</body>
+</html>

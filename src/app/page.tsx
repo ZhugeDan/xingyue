@@ -1,65 +1,383 @@
-import Image from "next/image";
+'use client'
+
+import './globals.css'
+import { useState, useEffect } from 'react'
+import { Plus, Camera, Video, Loader2, AlertCircle } from 'lucide-react'
+import ImageModal from '../components/ImageModal'
+import PermissionManager from '../components/PermissionManager'
+
+// 类型定义
+interface Moment {
+  id: string
+  date: string
+  title: string
+  description: string
+  mediaType: 'photo' | 'video'
+  mediaUrl: string
+}
+
+// 按月分组的数据结构
+interface MonthGroup {
+  year: number
+  month: number
+  monthName: string
+  representativeImage: Moment
+  moments: Moment[]
+}
+
+
 
 export default function Home() {
+  const [moments, setMoments] = useState<Moment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedMoment, setSelectedMoment] = useState<Moment | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false) // 管理员权限状态
+
+  // 权限变化处理
+  const handlePermissionChange = (adminStatus: boolean) => {
+    setIsAdmin(adminStatus)
+  }
+
+  // 获取数据
+  const fetchMoments = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/moments')
+      if (!response.ok) {
+        throw new Error('获取数据失败')
+      }
+      const data = await response.json()
+      setMoments(data)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '获取数据失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+
+  // 按月分组函数
+  const groupMomentsByMonth = (moments: Moment[]): MonthGroup[] => {
+    const groups: { [key: string]: Moment[] } = {}
+    
+    moments.forEach(moment => {
+      const date = new Date(moment.date)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      
+      if (!groups[key]) {
+        groups[key] = []
+      }
+      groups[key].push(moment)
+    })
+    
+    // 转换为 MonthGroup 数组
+    const monthGroups: MonthGroup[] = Object.keys(groups).map(key => {
+      const [year, month] = key.split('-').map(Number)
+      const momentsInMonth = groups[key].sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      )
+      
+      // 选择代表图片：优先选择第一个照片，如果没有照片则选择第一个视频
+      const representativeImage = momentsInMonth.find(m => m.mediaType === 'photo') || momentsInMonth[0]
+      
+      return {
+        year,
+        month,
+        monthName: new Date(year, month - 1).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
+        representativeImage,
+        moments: momentsInMonth
+      }
+    })
+    
+    // 按时间倒序排列（最新的月份在前）
+    return monthGroups.sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year
+      return b.month - a.month
+    })
+  }
+
+  const [monthGroups, setMonthGroups] = useState<MonthGroup[]>([])
+
+  useEffect(() => {
+    fetchMoments()
+  }, [])
+
+  // 当 moments 数据更新时，重新分组
+  useEffect(() => {
+    if (moments.length > 0) {
+      const grouped = groupMomentsByMonth(moments)
+      setMonthGroups(grouped)
+    }
+  }, [moments])
+
+  // 打开图片模态框
+  const openImageModal = (moment: Moment) => {
+    setSelectedMoment(moment)
+    setIsModalOpen(true)
+  }
+
+  // 关闭图片模态框
+  const closeImageModal = () => {
+    setSelectedMoment(null)
+    setIsModalOpen(false)
+  }
+
+  // 下载图片
+  const handleDownload = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.style.display = 'none'
+      a.href = downloadUrl
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(downloadUrl)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('下载失败:', error)
+      alert('下载失败，请重试')
+    }
+  }
+
+  // 编辑记录
+  const handleEdit = (moment: Moment) => {
+    const newTitle = prompt('编辑标题:', moment.title)
+    if (newTitle !== null && newTitle.trim() !== '') {
+      const newDate = prompt('编辑日期 (YYYY-MM-DD):', moment.date.split('T')[0])
+      if (newDate !== null && newDate.trim() !== '') {
+        updateMoment(moment.id, { 
+          title: newTitle.trim(),
+          date: new Date(newDate + 'T12:00:00Z').toISOString()
+        })
+      }
+    }
+  }
+
+  // 更新记录
+  const updateMoment = async (id: string, updates: Partial<Moment>) => {
+    try {
+      const response = await fetch(`/api/moments/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+      })
+
+      if (!response.ok) {
+        throw new Error('更新失败')
+      }
+
+      // 重新获取数据
+      await fetchMoments()
+      closeImageModal()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '更新失败')
+    }
+  }
+
+  // 删除记录
+  const handleDelete = async (moment: Moment) => {
+    try {
+      const response = await fetch(`/api/moments/${moment.id}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('删除失败')
+      }
+
+      // 重新获取数据
+      await fetchMoments()
+      closeImageModal()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除失败')
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-blue-50 p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-8">
+          <h1 className="text-5xl font-bold text-gray-800 mb-4">
+            🌟 成长日记 🌟
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-gray-600 mb-6 text-lg">
+            记录每一个珍贵的成长瞬间
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          
+          {/* 权限管理 */}
+          <div className="mb-6 flex justify-center">
+            <PermissionManager onPermissionChange={handlePermissionChange} />
+          </div>
+          
+          <button
+            onClick={() => window.location.href = '/upload'}
+            className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-full hover:from-blue-700 hover:to-purple-700 transition-all transform hover:scale-105 flex items-center gap-2 mx-auto"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <Plus className="w-5 h-5" />
+            家人上传
+          </button>
         </div>
-      </main>
+
+
+
+        {/* 错误提示 */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-red-600" />
+            <span className="text-red-700">{error}</span>
+          </div>
+        )}
+
+        {/* 加载状态 */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+            <span className="ml-2 text-gray-600">加载中...</span>
+          </div>
+        ) : (
+          <>
+            {/* 按月分组展示 */}
+            <div className="space-y-12">
+              {monthGroups.map((monthGroup) => (
+                <div key={`${monthGroup.year}-${monthGroup.month}`} className="bg-white rounded-xl shadow-lg p-6">
+                  {/* 月份标题和代表图片 */}
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center space-x-4">
+                      <div 
+                         className="aspect-square w-24 h-24 rounded-lg overflow-hidden shadow-md cursor-pointer group"
+                         onClick={() => openImageModal(monthGroup.representativeImage)}
+                         title="点击查看大图"
+                       >
+                         <img 
+                           src={monthGroup.representativeImage.mediaUrl} 
+                           alt={monthGroup.representativeImage.title}
+                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 cursor-zoom-in"
+                         />
+                       </div>
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-800">{monthGroup.monthName}</h2>
+                        <p className="text-gray-600">
+                          共 {monthGroup.moments.length} 个珍贵瞬间
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm text-gray-500">
+                        代表图片：{monthGroup.representativeImage.title}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* 该月的所有时刻 */}
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                     {monthGroup.moments.map((moment) => (
+                       <div 
+                         key={moment.id} 
+                         className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-all cursor-pointer group"
+                         onClick={() => openImageModal(moment)}
+                       >
+                         <div className="aspect-video overflow-hidden rounded-md mb-3">
+                           <img 
+                             src={moment.mediaUrl} 
+                             alt={moment.title}
+                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                           />
+                         </div>
+                        <h4 className="font-semibold text-gray-800 mb-1">{moment.title}</h4>
+                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">{moment.description}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            {new Date(moment.date).toLocaleDateString('zh-CN', {
+                              month: 'short',
+                              day: 'numeric'
+                            })}
+                          </span>
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                            moment.mediaType === 'photo' 
+                              ? 'bg-blue-100 text-blue-800' 
+                              : 'bg-purple-100 text-purple-800'
+                          }`}>
+                            {moment.mediaType === 'photo' ? (
+                              <><Camera className="w-3 h-3 mr-1" /> 照片</>
+                            ) : (
+                              <><Video className="w-3 h-3 mr-1" /> 视频</>
+                            )}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* 空状态 */}
+            {moments.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">📝</div>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">还没有记录</h3>
+                <p className="text-gray-500">点击上方按钮添加第一个成长记录吧！</p>
+              </div>
+            )}
+            
+            {/* 月份分组空状态 */}
+            {moments.length > 0 && monthGroups.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">🗓️</div>
+                <h3 className="text-xl font-semibold text-gray-700 mb-2">加载中...</h3>
+                <p className="text-gray-500">正在整理成长记录...</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 项目配置 */}
+        <div className="mt-12 bg-white p-8 rounded-xl shadow-lg">
+          <h2 className="text-2xl font-bold text-center mb-6 text-gray-800">📊 项目配置</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="text-center">
+              <div className="text-3xl mb-2">⚡</div>
+              <div className="font-semibold text-gray-700">Next.js 16.1.1</div>
+              <div className="text-sm text-gray-500">现代化框架</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl mb-2">🎨</div>
+              <div className="font-semibold text-gray-700">Tailwind CSS v4</div>
+              <div className="text-sm text-gray-500">样式框架</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl mb-2">📱</div>
+              <div className="font-semibold text-gray-700">响应式设计</div>
+              <div className="text-sm text-gray-500">移动端友好</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl mb-2">🔧</div>
+              <div className="font-semibold text-gray-700">TypeScript</div>
+              <div className="text-sm text-gray-500">类型安全</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 图片预览模态框 */}
+      <ImageModal
+        moment={selectedMoment}
+        isOpen={isModalOpen}
+        onClose={closeImageModal}
+        onDownload={handleDownload}
+        canEdit={isAdmin}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
     </div>
-  );
+  )
 }
