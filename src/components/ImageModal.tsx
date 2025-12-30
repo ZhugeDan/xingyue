@@ -91,65 +91,94 @@ export default function ImageModal({
           <X className="w-6 h-6" />
         </button>
 
-        {/* 操作按钮组 */}
-        <div className="absolute top-4 left-4 z-10 flex space-x-2">
-          {/* 下载按钮 */}
-          {onDownload && (
-            <button
-              onClick={handleDownload}
-              disabled={isLoading}
-              className="bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-all disabled:opacity-50"
-              title="下载图片"
-            >
-              <Download className="w-5 h-5" />
-            </button>
-          )}
 
-          {/* 编辑按钮（管理员权限） */}
-          {canEdit && onEdit && (
-            <button
-              onClick={() => onEdit(moment)}
-              className="bg-black bg-opacity-50 text-white p-2 rounded-full hover:bg-opacity-70 transition-all"
-              title="编辑记录"
-            >
-              <FileText className="w-5 h-5" />
-            </button>
-          )}
-
-          {/* 删除按钮（管理员权限） */}
-          {canEdit && onDelete && (
-            <button
-              onClick={() => {
-                if (confirm('确定要删除这条记录吗？此操作无法撤销。')) {
-                  onDelete(moment)
-                }
-              }}
-              className="bg-red-600 bg-opacity-80 text-white p-2 rounded-full hover:bg-opacity-100 transition-all"
-              title="删除记录"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-        </div>
 
         <div className="flex flex-col lg:flex-row max-h-full">
           {/* 图片/视频区域 */}
-          <div className="flex-1 flex items-center justify-center bg-black rounded-lg overflow-hidden">
-            {moment.mediaType === 'video' ? (
-              <video
-                src={moment.mediaUrl}
-                controls
-                className="max-w-full max-h-full"
-                autoPlay
-              />
-            ) : (
-              <img
-                src={moment.mediaUrl}
-                alt={moment.title}
-                className="max-w-full max-h-full object-contain"
-                onClick={(e) => e.stopPropagation()}
-              />
-            )}
+          <div className="flex-1 flex flex-col bg-black rounded-lg overflow-hidden">
+            {/* 图片/视频主体 */}
+            <div className="flex-1 flex items-center justify-center overflow-hidden">
+              {moment.mediaType === 'video' ? (
+                <video
+                  src={moment.mediaUrl}
+                  controls
+                  className="max-w-full max-h-full"
+                  autoPlay
+                />
+              ) : (
+                <img
+                  src={moment.mediaUrl}
+                  alt={moment.title}
+                  className="max-w-full max-h-full object-contain"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
+            </div>
+            
+            {/* 操作按钮组 - 居中显示在图片下方 */}
+            <div className="flex justify-center p-4 bg-gradient-to-t from-black to-transparent">
+              <div className="flex space-x-4">
+                {/* 管理员权限按钮组 */}
+                {canEdit ? (
+                  <>
+                    {/* 下载按钮 */}
+                    {onDownload && (
+                      <button
+                        onClick={handleDownload}
+                        disabled={isLoading}
+                        className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-6 py-3 rounded-full transition-all disabled:opacity-50 flex items-center space-x-2"
+                        title="下载"
+                      >
+                        <Download className="w-5 h-5" />
+                        <span className="text-sm font-medium">下载</span>
+                      </button>
+                    )}
+
+                    {/* 编辑按钮 */}
+                    {onEdit && (
+                      <button
+                        onClick={() => onEdit(moment)}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-full transition-all flex items-center space-x-2"
+                        title="修改"
+                      >
+                        <FileText className="w-5 h-5" />
+                        <span className="text-sm font-medium">修改</span>
+                      </button>
+                    )}
+
+                    {/* 删除按钮 */}
+                    {onDelete && (
+                      <button
+                        onClick={() => {
+                          if (confirm('确定要删除这条记录吗？此操作无法撤销。')) {
+                            onDelete(moment)
+                          }
+                        }}
+                        className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-full transition-all flex items-center space-x-2"
+                        title="删除"
+                      >
+                        <X className="w-5 h-5" />
+                        <span className="text-sm font-medium">删除</span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  /* 普通用户只能删除 */
+                  <button
+                    onClick={() => {
+                      if (confirm('确定要删除这条记录吗？此操作无法撤销。')) {
+                        onDelete?.(moment)
+                      }
+                    }}
+                    className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-full transition-all flex items-center space-x-2"
+                    title="删除"
+                  >
+                    <X className="w-5 h-5" />
+                    <span className="text-sm font-medium">删除</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* 信息面板 */}
