@@ -13,7 +13,17 @@ interface Moment {
   title: string
   description: string
   mediaType: 'photo' | 'video'
-  mediaUrl: string
+  mediaUrl?: string // 兼容旧格式
+  mediaUrls: string[] // 支持多图片
+  uploadDate: string // 上传日期
+  captureDate?: string // 拍照日期（从EXIF提取）
+  exifData?: {
+    camera?: string
+    lens?: string
+    iso?: number
+    aperture?: string
+    shutterSpeed?: string
+  }
 }
 
 // 按月分组的数据结构
@@ -65,7 +75,9 @@ export default function Home() {
     const groups: { [key: string]: Moment[] } = {}
     
     moments.forEach(moment => {
-      const date = new Date(moment.date)
+      // 优先使用拍摄日期，其次使用上传日期，最后使用原始日期
+      const dateString = moment.captureDate || moment.uploadDate || moment.date
+      const date = new Date(dateString)
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       
       if (!groups[key]) {
@@ -77,9 +89,11 @@ export default function Home() {
     // 转换为 MonthGroup 数组
     const monthGroups: MonthGroup[] = Object.keys(groups).map(key => {
       const [year, month] = key.split('-').map(Number)
-      const momentsInMonth = groups[key].sort((a, b) => 
-        new Date(b.date).getTime() - new Date(a.date).getTime()
-      )
+      const momentsInMonth = groups[key].sort((a, b) => {
+        const dateA = new Date(a.captureDate || a.uploadDate || a.date)
+        const dateB = new Date(b.captureDate || b.uploadDate || b.date)
+        return dateB.getTime() - dateA.getTime()
+      })
       
       // 选择代表图片：优先选择第一个照片，如果没有照片则选择第一个视频
       const representativeImage = momentsInMonth.find(m => m.mediaType === 'photo') || momentsInMonth[0]
@@ -287,31 +301,58 @@ export default function Home() {
                        >
                          <div className="aspect-video overflow-hidden rounded-md mb-3">
                            <img 
-                             src={moment.mediaUrl} 
+                             src={moment.mediaUrls[0] || moment.mediaUrl} 
                              alt={moment.title}
                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                            />
                          </div>
                         <h4 className="font-semibold text-gray-800 mb-1">{moment.title}</h4>
                         <p className="text-sm text-gray-600 mb-2 line-clamp-2">{moment.description}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500">
-                            {new Date(moment.date).toLocaleDateString('zh-CN', {
+                        
+                        {/* 日期信息显示 */}
+                        <div className="space-y-1 mb-3">
+                          {moment.captureDate && (
+                            <div className="flex items-center text-xs text-blue-600">
+                              <Camera className="w-3 h-3 mr-1" />
+                              拍摄: {new Date(moment.captureDate).toLocaleDateString('zh-CN', {
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                            </div>
+                          )}
+                          <div className="flex items-center text-xs text-gray-500">
+                            <Plus className="w-3 h-3 mr-1" />
+                            上传: {new Date(moment.uploadDate).toLocaleDateString('zh-CN', {
                               month: 'short',
                               day: 'numeric'
                             })}
-                          </span>
-                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                            moment.mediaType === 'photo' 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-purple-100 text-purple-800'
-                          }`}>
-                            {moment.mediaType === 'photo' ? (
-                              <><Camera className="w-3 h-3 mr-1" /> 照片</>
-                            ) : (
-                              <><Video className="w-3 h-3 mr-1" /> 视频</>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            {moment.exifData?.camera && (
+                              <span className="text-gray-400">{moment.exifData.camera}</span>
                             )}
                           </span>
+                          <div className="flex items-center space-x-2">
+                            {moment.mediaUrls.length > 1 && (
+                              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
+                                {moment.mediaUrls.length}张
+                              </span>
+                            )}
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              moment.mediaType === 'photo' 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : 'bg-purple-100 text-purple-800'
+                            }`}>
+                              {moment.mediaType === 'photo' ? (
+                                <><Camera className="w-3 h-3 mr-1" /> 照片</>
+                              ) : (
+                                <><Video className="w-3 h-3 mr-1" /> 视频</>
+                              )}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     ))}

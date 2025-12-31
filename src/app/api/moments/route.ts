@@ -12,7 +12,20 @@ interface Moment {
   title: string
   description: string
   mediaType: 'photo' | 'video'
-  mediaUrl: string
+  mediaUrls: string[] // 支持多图片
+  captureDate?: string // 拍照日期（从EXIF提取）
+  uploadDate: string // 上传日期
+  exifData?: {
+    camera?: string
+    lens?: string
+    iso?: number
+    aperture?: string
+    shutterSpeed?: string
+    gps?: {
+      latitude: number
+      longitude: number
+    }
+  }
 }
 
 // 生成唯一 ID
@@ -59,12 +72,21 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { title, description, mediaType, mediaUrl, date } = body
+    const { 
+      title, 
+      description, 
+      mediaType, 
+      mediaUrl, 
+      mediaUrls, 
+      date,
+      captureDate,
+      exifData 
+    } = body
 
     // 验证必填字段
-    if (!title || !description || !mediaType || !mediaUrl) {
+    if (!title || !description || !mediaType) {
       return NextResponse.json(
-        { error: '缺少必填字段：title, description, mediaType, mediaUrl' },
+        { error: '缺少必填字段：title, description, mediaType' },
         { status: 400 }
       )
     }
@@ -77,6 +99,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // 验证媒体文件
+    const mediaFiles = mediaUrls || (mediaUrl ? [mediaUrl] : [])
+    if (mediaFiles.length === 0) {
+      return NextResponse.json(
+        { error: '至少需要提供一个媒体文件' },
+        { status: 400 }
+      )
+    }
+
     // 创建新记录
     const newMoment: Moment = {
       id: generateId(),
@@ -84,7 +115,10 @@ export async function POST(request: NextRequest) {
       title: title.trim(),
       description: description.trim(),
       mediaType,
-      mediaUrl: mediaUrl.trim()
+      mediaUrls: mediaFiles,
+      uploadDate: new Date().toISOString(),
+      captureDate: captureDate || undefined,
+      exifData: exifData || undefined
     }
 
     // 读取现有数据

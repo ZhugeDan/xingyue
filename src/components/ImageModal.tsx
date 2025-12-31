@@ -118,22 +118,22 @@ export default function ImageModal({
             {/* 操作按钮组 - 居中显示在图片下方 */}
             <div className="flex justify-center p-4 bg-gradient-to-t from-black to-transparent">
               <div className="flex space-x-4">
+                {/* 下载按钮 - 所有用户可见 */}
+                {onDownload && (
+                  <button
+                    onClick={handleDownload}
+                    disabled={isLoading}
+                    className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-6 py-3 rounded-full transition-all disabled:opacity-50 flex items-center space-x-2"
+                    title="下载"
+                  >
+                    <Download className="w-5 h-5" />
+                    <span className="text-sm font-medium">下载</span>
+                  </button>
+                )}
+
                 {/* 管理员权限按钮组 */}
                 {canEdit ? (
                   <>
-                    {/* 下载按钮 */}
-                    {onDownload && (
-                      <button
-                        onClick={handleDownload}
-                        disabled={isLoading}
-                        className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-6 py-3 rounded-full transition-all disabled:opacity-50 flex items-center space-x-2"
-                        title="下载"
-                      >
-                        <Download className="w-5 h-5" />
-                        <span className="text-sm font-medium">下载</span>
-                      </button>
-                    )}
-
                     {/* 编辑按钮 */}
                     {onEdit && (
                       <button
@@ -163,7 +163,7 @@ export default function ImageModal({
                     )}
                   </>
                 ) : (
-                  /* 普通用户只能删除 */
+                  /* 普通用户删除按钮 */
                   <button
                     onClick={() => {
                       if (confirm('确定要删除这条记录吗？此操作无法撤销。')) {

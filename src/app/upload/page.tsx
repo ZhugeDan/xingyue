@@ -1,11 +1,20 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Upload, Image, Video, Lock, Check, AlertCircle } from 'lucide-react'
+import { Upload, Image, Video, Lock, Check, AlertCircle, X, Camera, Calendar } from 'lucide-react'
+import { readExifData, extractCaptureDate, extractCameraInfo } from '@/lib/exif-reader'
+
+interface FileWithExif {
+  file: File
+  exifData: any
+  captureDate: string | null
+  cameraInfo: any
+  previewUrl: string
+  uploadUrl: string | null
+}
 
 interface UploadState {
-  file: File | null
-  fileUrl: string
+  files: FileWithExif[]
   uploading: boolean
   uploadingToCOS: boolean
   uploadingToAPI: boolean
@@ -20,8 +29,7 @@ interface UploadState {
 
 export default function UploadPage() {
   const [state, setState] = useState<UploadState>({
-    file: null,
-    fileUrl: '',
+    files: [],
     uploading: false,
     uploadingToCOS: false,
     uploadingToAPI: false,
@@ -36,11 +44,50 @@ export default function UploadPage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setState(prev => ({ ...prev, file, error: '', success: '' }))
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (files && files.length > 0) {
+      const filePromises = Array.from(files).map(async (file) => {
+        const exifData = await readExifData(file)
+        const captureDate = extractCaptureDate(exifData)
+        const cameraInfo = extractCameraInfo(exifData)
+        
+        return {
+          file,
+          exifData,
+          captureDate,
+          cameraInfo,
+          previewUrl: URL.createObjectURL(file),
+          uploadUrl: null
+        } as FileWithExif
+      })
+
+      try {
+        const filesWithExif = await Promise.all(filePromises)
+        setState(prev => ({ 
+          ...prev, 
+          files: [...prev.files, ...filesWithExif], 
+          error: '', 
+          success: '' 
+        }))
+      } catch (error) {
+        setState(prev => ({ 
+          ...prev, 
+          error: '读取文件信息失败' 
+        }))
+      }
     }
+  }
+
+  const removeFile = (index: number) => {
+    setState(prev => ({
+      ...prev,
+      files: prev.files.filter((_, i) => i !== index)
+    }))
+  }
+
+  const getMediaType = (file: File): 'photo' | 'video' => {
+    return file.type.startsWith('video/') ? 'video' : 'photo'
   }
 
   const uploadToCOS = async (file: File): Promise<string> => {
@@ -116,26 +163,31 @@ export default function UploadPage() {
     }
   }
 
-
-
-
-
-  const submitMoment = async (mediaUrl: string) => {
+  const submitMoment = async (mediaUrls: string[]) => {
     try {
       setState(prev => ({ ...prev, uploadingToAPI: true, error: '' }))
+
+      const mainFile = state.files[0]
+      const mediaType = getMediaType(mainFile.file)
+      const uploadDate = new Date().toISOString()
+
+      // 构建请求数据
+      const momentData = {
+        title: state.title || '未命名记录',
+        description: state.description || `上传于 ${new Date().toLocaleString('zh-CN')}`,
+        mediaType,
+        mediaUrls,
+        uploadDate,
+        captureDate: mainFile.captureDate || undefined,
+        exifData: mainFile.cameraInfo || undefined
+      }
 
       const response = await fetch('/api/moments', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          title: state.title || '未命名记录',
-          description: state.description || `上传于 ${new Date().toLocaleString('zh-CN')}`,
-          mediaType: state.file?.type.startsWith('video/') ? 'video' : 'photo',
-          mediaUrl: mediaUrl,
-          date: new Date().toISOString()
-        }),
+        body: JSON.stringify(momentData),
       })
 
       if (!response.ok) {
@@ -144,15 +196,14 @@ export default function UploadPage() {
 
       // 如果已经设置了本地存储成功消息，就不覆盖
       const successMessage = state.usingLocalStorage 
-        ? '记录上传成功！文件已保存到本地存储。'
-        : '记录上传成功！'
+        ? `成功上传 ${state.files.length} 个文件！记录已保存到本地存储。`
+        : `成功上传 ${state.files.length} 个文件！记录保存成功。`
 
       setState(prev => ({
         ...prev,
         uploadingToAPI: false,
         success: successMessage,
-        file: null,
-        fileUrl: '',
+        files: [],
         title: '',
         description: '',
         securityCode: '',
@@ -182,12 +233,10 @@ export default function UploadPage() {
       return
     }
 
-    if (!state.file) {
+    if (state.files.length === 0) {
       setState(prev => ({ ...prev, error: '请选择要上传的文件' }))
       return
     }
-
-    // 标题和描述都是可选的，不需要验证
 
     try {
       setState(prev => ({ 
@@ -201,45 +250,53 @@ export default function UploadPage() {
         success: '' 
       }))
 
-      let mediaUrl: string
+      const mediaUrls: string[] = []
       let usedLocalStorage = false
 
-      try {
-        // 步骤1: 首先尝试上传到腾讯云COS
-        mediaUrl = await uploadToCOS(state.file)
-        setState(prev => ({ ...prev, uploadingToCOS: false, fileUrl: mediaUrl }))
-      } catch (cosError) {
-        console.error('COS上传失败，切换到本地存储:', cosError)
-        
-        // COS上传失败，切换到本地存储
-        setState(prev => ({ 
-          ...prev, 
-          uploadingToCOS: false,
-          uploadingToLocal: true,
-          usingLocalStorage: true
-        }))
-        
+      // 上传所有文件
+      for (let i = 0; i < state.files.length; i++) {
+        const fileWithExif = state.files[i]
+        let mediaUrl: string
+
         try {
-          mediaUrl = await uploadToLocal(state.file)
-          setState(prev => ({ ...prev, uploadingToLocal: false, fileUrl: mediaUrl }))
-          usedLocalStorage = true
-        } catch (localError) {
-          console.error('本地存储也失败了:', localError)
-          throw new Error('云端和本地存储都失败了，请稍后重试')
+          // 步骤1: 首先尝试上传到腾讯云COS
+          mediaUrl = await uploadToCOS(fileWithExif.file)
+        } catch (cosError) {
+          console.error(`文件 ${i + 1} COS上传失败，切换到本地存储:`, cosError)
+          
+          // COS上传失败，切换到本地存储
+          if (i === 0) {
+            setState(prev => ({ 
+              ...prev, 
+              uploadingToCOS: false,
+              uploadingToLocal: true,
+              usingLocalStorage: true
+            }))
+          }
+          
+          try {
+            mediaUrl = await uploadToLocal(fileWithExif.file)
+            usedLocalStorage = true
+          } catch (localError) {
+            console.error(`文件 ${i + 1} 本地存储也失败了:`, localError)
+            throw new Error(`文件 ${fileWithExif.file.name} 上传失败`)
+          }
         }
+
+        mediaUrls.push(mediaUrl)
+        
+        // 更新已上传的文件状态
+        setState(prev => ({
+          ...prev,
+          files: prev.files.map((f, index) => 
+            index === i ? { ...f, uploadUrl: mediaUrl } : f
+          )
+        }))
       }
       
       // 步骤2: 保存到moments.json
       setState(prev => ({ ...prev, uploadingToAPI: true }))
-      await submitMoment(mediaUrl)
-
-      // 显示存储位置信息
-      if (usedLocalStorage) {
-        setState(prev => ({ 
-          ...prev, 
-          success: '记录上传成功！文件已保存到本地存储。'
-        }))
-      }
+      await submitMoment(mediaUrls)
 
     } catch (error) {
       setState(prev => ({
@@ -261,16 +318,36 @@ export default function UploadPage() {
     return 100
   }
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const formatDate = (dateString: string | null): string => {
+    if (!dateString) return '未知'
+    const date = new Date(dateString)
+    return date.toLocaleDateString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-blue-50 p-4">
-      <div className="max-w-md mx-auto">
+      <div className="max-w-2xl mx-auto">
         {/* 标题 */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
             📸 上传成长记录
           </h1>
           <p className="text-gray-600">
-            分享珍贵的成长瞬间
+            支持多图片上传，自动识别拍摄日期和相机信息
           </p>
         </div>
 
@@ -279,45 +356,74 @@ export default function UploadPage() {
           {/* 文件选择 */}
           <div className="bg-white rounded-xl p-6 shadow-sm">
             <label className="block text-sm font-medium text-gray-700 mb-3">
-              选择照片或视频
+              选择照片或视频 <span className="text-gray-400">(可选择多个文件)</span>
             </label>
             <div 
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-pink-400 transition-colors"
             >
-              {state.file ? (
-                <div className="space-y-3">
-                  {state.file.type.startsWith('image/') ? (
-                    <div className="relative">
-                      <img
-                        src={URL.createObjectURL(state.file)}
-                        alt="预览"
-                        className="w-full h-48 object-cover rounded-lg shadow-md"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-lg" />
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <Video className="w-12 h-12 text-blue-500 mx-auto" />
-                      <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
-                        视频文件
+              {state.files.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {state.files.map((fileWithExif, index) => (
+                    <div key={index} className="relative group">
+                      <div className="relative">
+                        {fileWithExif.file.type.startsWith('image/') ? (
+                          <img
+                            src={fileWithExif.previewUrl}
+                            alt={`预览 ${index + 1}`}
+                            className="w-full h-32 object-cover rounded-lg shadow-md"
+                          />
+                        ) : (
+                          <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <Video className="w-8 h-8 text-gray-400" />
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFile(index)
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="mt-2 text-xs space-y-1">
+                        <p className="truncate text-gray-900" title={fileWithExif.file.name}>
+                          {fileWithExif.file.name}
+                        </p>
+                        <p className="text-gray-500">{formatFileSize(fileWithExif.file.size)}</p>
+                        {fileWithExif.captureDate && (
+                          <p className="text-blue-600 flex items-center">
+                            <Camera className="w-3 h-3 mr-1" />
+                            拍摄: {formatDate(fileWithExif.captureDate)}
+                          </p>
+                        )}
+                        {fileWithExif.cameraInfo.camera && (
+                          <p className="text-gray-600">{fileWithExif.cameraInfo.camera}</p>
+                        )}
+                        {fileWithExif.uploadUrl && (
+                          <p className="text-green-600">✓ 已上传</p>
+                        )}
                       </div>
                     </div>
-                  )}
-                  <div className="text-center">
-                    <p className="text-sm font-medium text-gray-900">
-                      {state.file.name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {(state.file.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
+                  ))}
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex items-center justify-center hover:border-pink-400 transition-colors">
+                    <div className="text-center text-gray-400">
+                      <Upload className="w-8 h-8 mx-auto mb-2" />
+                      <p className="text-sm">添加更多</p>
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-2">
                   <Upload className="w-12 h-12 text-gray-400 mx-auto" />
                   <p className="text-sm text-gray-500">
-                    点击选择文件
+                    点击选择文件（支持多选）
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    支持 JPG, PNG, HEIC, MP4 等格式
                   </p>
                 </div>
               )}
@@ -327,11 +433,31 @@ export default function UploadPage() {
               type="file"
               accept="image/*,video/*"
               onChange={handleFileSelect}
+              multiple
               className="hidden"
             />
           </div>
 
-          {/* 说明信息 */}
+          {/* EXIF信息说明 */}
+          {state.files.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <div className="flex items-center space-x-2 mb-2">
+                <Camera className="w-5 h-5 text-blue-600" />
+                <h3 className="text-sm font-medium text-blue-800">EXIF数据信息</h3>
+              </div>
+              <p className="text-xs text-blue-700 mb-2">
+                系统将自动读取图片的拍摄日期和相机信息，帮助您更好地整理记录。
+              </p>
+              {state.files.some(f => f.captureDate) && (
+                <div className="text-xs text-blue-600">
+                  <Calendar className="w-3 h-3 inline mr-1" />
+                  已识别到拍摄日期信息
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 存储信息 */}
           <div className={`border rounded-xl p-4 ${
             state.usingLocalStorage 
               ? 'bg-orange-50 border-orange-200' 
@@ -462,7 +588,7 @@ export default function UploadPage() {
           {/* 提交按钮 */}
           <button
             type="submit"
-            disabled={state.uploading}
+            disabled={state.uploading || state.files.length === 0}
             className="w-full bg-gradient-to-r from-pink-500 to-blue-500 text-white font-medium py-4 px-6 rounded-xl hover:from-pink-600 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           >
             {state.uploading ? (
@@ -473,7 +599,7 @@ export default function UploadPage() {
             ) : (
               <div className="flex items-center justify-center space-x-2">
                 <Upload className="w-5 h-5" />
-                <span>上传记录</span>
+                <span>上传记录 {state.files.length > 0 ? `(${state.files.length}个文件)` : ''}</span>
               </div>
             )}
           </button>
