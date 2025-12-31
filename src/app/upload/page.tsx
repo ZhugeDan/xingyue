@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react'
 import { Upload, Image, Video, Lock, Check, AlertCircle, X, Camera, Calendar } from 'lucide-react'
 import { readExifData, extractCaptureDate, extractCameraInfo } from '@/lib/exif-reader'
+import { generateVideoThumbnail } from '@/lib/video-thumbnail'
 
 interface FileWithExif {
   file: File
@@ -10,6 +11,7 @@ interface FileWithExif {
   captureDate: string | null
   cameraInfo: any
   previewUrl: string
+  thumbnailUrl?: string
   uploadUrl: string | null
 }
 
@@ -52,12 +54,29 @@ export default function UploadPage() {
         const captureDate = extractCaptureDate(exifData)
         const cameraInfo = extractCameraInfo(exifData)
         
+        let previewUrl: string
+        let thumbnailUrl: string | undefined
+        
+        // 对于视频文件，生成缩略图
+        if (file.type.startsWith('video/')) {
+          try {
+            previewUrl = await generateVideoThumbnail(file)
+            thumbnailUrl = previewUrl
+          } catch (error) {
+            console.error('视频缩略图生成失败:', error)
+            previewUrl = URL.createObjectURL(file)
+          }
+        } else {
+          previewUrl = URL.createObjectURL(file)
+        }
+        
         return {
           file,
           exifData,
           captureDate,
           cameraInfo,
-          previewUrl: URL.createObjectURL(file),
+          previewUrl,
+          thumbnailUrl,
           uploadUrl: null
         } as FileWithExif
       })
@@ -374,8 +393,21 @@ export default function UploadPage() {
                             className="w-full h-32 object-cover rounded-lg shadow-md"
                           />
                         ) : (
-                          <div className="w-full h-32 bg-gray-100 rounded-lg flex items-center justify-center">
-                            <Video className="w-8 h-8 text-gray-400" />
+                          <div className="relative w-full h-32 rounded-lg overflow-hidden">
+                            {fileWithExif.thumbnailUrl ? (
+                              <img
+                                src={fileWithExif.thumbnailUrl}
+                                alt={`视频缩略图 ${index + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                                <Video className="w-8 h-8 text-gray-400" />
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+                              <Video className="w-6 h-6 text-white" />
+                            </div>
                           </div>
                         )}
                         <button

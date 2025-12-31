@@ -124,8 +124,8 @@ export async function POST(request: NextRequest) {
     // 读取现有数据
     const existingMoments = await readMoments()
 
-    // 添加新记录到开头（最新的在前面）
-    const updatedMoments = [newMoment, ...existingMoments]
+    // 添加新记录到末尾（按时间顺序，从早到晚）
+    const updatedMoments = [...existingMoments, newMoment]
 
     // 写入文件
     await writeMoments(updatedMoments)

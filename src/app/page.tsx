@@ -93,7 +93,7 @@ export default function Home() {
         const momentsInMonth = groups[key].sort((a, b) => {
           const dateA = new Date(a.captureDate || a.uploadDate || a.date)
           const dateB = new Date(b.captureDate || b.uploadDate || b.date)
-          return dateB.getTime() - dateA.getTime()
+          return dateA.getTime() - dateB.getTime() // 从早到晚排序，便于查看成长时间线
         })
         
         // 确保有有效的 moments
@@ -172,18 +172,40 @@ export default function Home() {
     }
   }
 
-  // 编辑记录
+  // 编辑记录 - 完整的编辑表单
   const handleEdit = (moment: Moment) => {
+    // 创建一个自定义的编辑表单
     const newTitle = prompt('编辑标题:', moment.title)
-    if (newTitle !== null && newTitle.trim() !== '') {
-      const newDate = prompt('编辑日期 (YYYY-MM-DD):', moment.date.split('T')[0])
-      if (newDate !== null && newDate.trim() !== '') {
-        updateMoment(moment.id, { 
-          title: newTitle.trim(),
-          date: new Date(newDate + 'T12:00:00Z').toISOString()
-        })
-      }
+    if (newTitle === null || newTitle.trim() === '') return
+
+    const newDescription = prompt('编辑描述:', moment.description)
+    if (newDescription === null || newDescription.trim() === '') return
+
+    const uploadDate = moment.uploadDate || moment.date
+    const currentUploadDate = new Date(uploadDate).toISOString().split('T')[0]
+    const newUploadDate = prompt('编辑上传日期 (YYYY-MM-DD):', currentUploadDate)
+    if (newUploadDate === null || newUploadDate.trim() === '') return
+
+    const captureDate = moment.captureDate
+    const currentCaptureDate = captureDate ? new Date(captureDate).toISOString().split('T')[0] : ''
+    const newCaptureDateInput = prompt(
+      '📸 拍摄日期编辑：\n\n这是照片实际拍摄的日期（不是上传日期）\n格式：YYYY-MM-DD\n当前：' + (currentCaptureDate || '未设置') + '\n\n直接回车保持不变，输入新日期覆盖：', 
+      currentCaptureDate
+    )
+    
+    const updates: any = {
+      title: newTitle.trim(),
+      description: newDescription.trim(),
+      date: new Date(newUploadDate + 'T12:00:00Z').toISOString(),
+      uploadDate: new Date(newUploadDate + 'T12:00:00Z').toISOString()
     }
+
+    // 只有当用户输入了拍照日期时才更新
+    if (newCaptureDateInput && newCaptureDateInput.trim() !== '') {
+      updates.captureDate = new Date(newCaptureDateInput + 'T12:00:00Z').toISOString()
+    }
+
+    updateMoment(moment.id, updates)
   }
 
   // 更新记录

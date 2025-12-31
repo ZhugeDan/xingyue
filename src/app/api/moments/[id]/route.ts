@@ -12,7 +12,17 @@ interface Moment {
   title: string
   description: string
   mediaType: 'photo' | 'video'
-  mediaUrl: string
+  mediaUrl?: string // 兼容旧格式
+  mediaUrls: string[] // 支持多图片
+  uploadDate: string // 上传日期
+  captureDate?: string // 拍照日期（从EXIF提取）
+  exifData?: {
+    camera?: string
+    lens?: string
+    iso?: number
+    aperture?: string
+    shutterSpeed?: string
+  }
 }
 
 // 读取数据文件
@@ -55,7 +65,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     }
     
     // 验证更新的字段
-    const allowedFields = ['title', 'description', 'date']
+    const allowedFields = ['title', 'description', 'date', 'uploadDate', 'captureDate']
     const updates: any = {}
     
     for (const field of allowedFields) {
@@ -68,7 +78,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             )
           }
           updates[field] = body[field].trim()
-        } else if (field === 'date') {
+        } else if (field === 'date' || field === 'uploadDate' || field === 'captureDate') {
           // 验证日期格式
           const dateObj = new Date(body[field])
           if (isNaN(dateObj.getTime())) {
