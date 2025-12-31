@@ -9,7 +9,17 @@ interface Moment {
   title: string
   description: string
   mediaType: 'photo' | 'video'
-  mediaUrl: string
+  mediaUrl?: string // 兼容旧格式
+  mediaUrls: string[] // 支持多图片
+  uploadDate: string // 上传日期
+  captureDate?: string // 拍照日期（从EXIF提取）
+  exifData?: {
+    camera?: string
+    lens?: string
+    iso?: number
+    aperture?: string
+    shutterSpeed?: string
+  }
 }
 
 interface ImageModalProps {
@@ -50,13 +60,23 @@ export default function ImageModal({
 
     try {
       setIsLoading(true)
-      const response = await fetch(moment.mediaUrl)
+      // 使用第一个媒体文件作为主要下载文件
+      const mediaUrl = (moment.mediaUrls?.length ? moment.mediaUrls[0] : null) || moment.mediaUrl
+      if (!mediaUrl) {
+        throw new Error('没有找到媒体文件URL')
+      }
+      
+      const response = await fetch(mediaUrl)
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.style.display = 'none'
       a.href = url
-      a.download = `${moment.title}-${new Date(moment.date).toLocaleDateString('zh-CN')}.${moment.mediaType === 'video' ? 'mp4' : 'jpg'}`
+      
+      // 使用拍摄日期，如果没有则使用上传日期
+      const displayDate = moment.captureDate || moment.uploadDate || moment.date
+      a.download = `${moment.title}-${new Date(displayDate).toLocaleDateString('zh-CN')}.${moment.mediaType === 'video' ? 'mp4' : 'jpg'}`
+      
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -100,18 +120,27 @@ export default function ImageModal({
             <div className="flex-1 flex items-center justify-center overflow-hidden">
               {moment.mediaType === 'video' ? (
                 <video
-                  src={moment.mediaUrl}
+                  src={(moment.mediaUrls?.length ? moment.mediaUrls[0] : null) || moment.mediaUrl}
                   controls
                   className="max-w-full max-h-full"
                   autoPlay
                 />
               ) : (
-                <img
-                  src={moment.mediaUrl}
-                  alt={moment.title}
-                  className="max-w-full max-h-full object-contain"
-                  onClick={(e) => e.stopPropagation()}
-                />
+                // 显示多张图片的轮播或第一张图片
+                <div className="relative w-full h-full flex items-center justify-center">
+                  <img
+                    src={(moment.mediaUrls?.length ? moment.mediaUrls[0] : null) || moment.mediaUrl}
+                    alt={moment.title}
+                    className="max-w-full max-h-full object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  {/* 如果有多张图片，显示图片数量提示 */}
+                  {(moment.mediaUrls?.length || 0) > 1 && (
+                    <div className="absolute top-4 right-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
+                      {moment.mediaUrls?.length || 0} 张图片
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             
@@ -204,11 +233,27 @@ export default function ImageModal({
                 <h2 className="text-xl font-bold text-gray-900 mb-2">{moment.title}</h2>
               </div>
 
-              {/* 日期 */}
+              {/* 拍照日期 */}
+              {moment.captureDate && (
+                <div className="flex items-center text-gray-600">
+                  <Camera className="w-4 h-4 mr-2" />
+                  <span className="text-sm">
+                    拍摄日期: {new Date(moment.captureDate).toLocaleDateString('zh-CN', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
+                </div>
+              )}
+              
+              {/* 上传日期 */}
               <div className="flex items-center text-gray-600">
                 <Calendar className="w-4 h-4 mr-2" />
                 <span className="text-sm">
-                  {new Date(moment.date).toLocaleDateString('zh-CN', {
+                  上传日期: {new Date(moment.uploadDate).toLocaleDateString('zh-CN', {
                     year: 'numeric',
                     month: 'long',
                     day: 'numeric',
@@ -217,6 +262,30 @@ export default function ImageModal({
                   })}
                 </span>
               </div>
+
+              {/* EXIF相机信息 */}
+              {moment.exifData && (
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">相机信息</h4>
+                  <div className="text-xs text-gray-600 space-y-1">
+                    {moment.exifData.camera && (
+                      <div>相机: {moment.exifData.camera}</div>
+                    )}
+                    {moment.exifData.lens && (
+                      <div>镜头: {moment.exifData.lens}</div>
+                    )}
+                    {moment.exifData.iso && (
+                      <div>ISO: {moment.exifData.iso}</div>
+                    )}
+                    {moment.exifData.aperture && (
+                      <div>光圈: {moment.exifData.aperture}</div>
+                    )}
+                    {moment.exifData.shutterSpeed && (
+                      <div>快门: {moment.exifData.shutterSpeed}</div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* 描述 */}
               <div className="bg-gray-50 rounded-lg p-3">
@@ -227,7 +296,10 @@ export default function ImageModal({
               <div className="text-xs text-gray-500 space-y-1">
                 <div>ID: {moment.id}</div>
                 <div>类型: {moment.mediaType}</div>
-                <div>URL: {moment.mediaUrl.substring(0, 50)}...</div>
+                <div>图片数量: {moment.mediaUrls?.length || 0}</div>
+                {(moment.mediaUrls || []).map((url, index) => (
+                  <div key={index}>URL {index + 1}: {url.substring(0, 30)}...</div>
+                ))}
               </div>
             </div>
           </div>

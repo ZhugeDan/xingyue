@@ -86,26 +86,38 @@ export default function Home() {
       groups[key].push(moment)
     })
     
-    // 转换为 MonthGroup 数组
-    const monthGroups: MonthGroup[] = Object.keys(groups).map(key => {
-      const [year, month] = key.split('-').map(Number)
-      const momentsInMonth = groups[key].sort((a, b) => {
-        const dateA = new Date(a.captureDate || a.uploadDate || a.date)
-        const dateB = new Date(b.captureDate || b.uploadDate || b.date)
-        return dateB.getTime() - dateA.getTime()
+    // 转换为 MonthGroup 数组，过滤掉无效的分组
+    const monthGroups: MonthGroup[] = Object.keys(groups)
+      .map(key => {
+        const [year, month] = key.split('-').map(Number)
+        const momentsInMonth = groups[key].sort((a, b) => {
+          const dateA = new Date(a.captureDate || a.uploadDate || a.date)
+          const dateB = new Date(b.captureDate || b.uploadDate || b.date)
+          return dateB.getTime() - dateA.getTime()
+        })
+        
+        // 确保有有效的 moments
+        if (momentsInMonth.length === 0) {
+          return null
+        }
+        
+        // 选择代表图片：优先选择第一个照片，如果没有照片则选择第一个视频
+        const representativeImage = momentsInMonth.find(m => m.mediaType === 'photo') || momentsInMonth[0]
+        
+        // 确保代表图片有效
+        if (!representativeImage || (!representativeImage.mediaUrls?.length && !representativeImage.mediaUrl)) {
+          return null
+        }
+        
+        return {
+          year,
+          month,
+          monthName: new Date(year, month - 1).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
+          representativeImage,
+          moments: momentsInMonth
+        }
       })
-      
-      // 选择代表图片：优先选择第一个照片，如果没有照片则选择第一个视频
-      const representativeImage = momentsInMonth.find(m => m.mediaType === 'photo') || momentsInMonth[0]
-      
-      return {
-        year,
-        month,
-        monthName: new Date(year, month - 1).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' }),
-        representativeImage,
-        moments: momentsInMonth
-      }
-    })
+      .filter((group): group is MonthGroup => group !== null) // TypeScript类型守卫
     
     // 按时间倒序排列（最新的月份在前）
     return monthGroups.sort((a, b) => {
@@ -272,10 +284,10 @@ export default function Home() {
                          title="点击查看大图"
                        >
                          <img 
-                           src={monthGroup.representativeImage.mediaUrl} 
-                           alt={monthGroup.representativeImage.title}
-                           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 cursor-zoom-in"
-                         />
+                          src={(monthGroup.representativeImage.mediaUrls?.length ? monthGroup.representativeImage.mediaUrls[0] : null) || monthGroup.representativeImage.mediaUrl || '/placeholder-image.jpg'} 
+                          alt={monthGroup.representativeImage.title}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 cursor-zoom-in"
+                        />
                        </div>
                       <div>
                         <h2 className="text-2xl font-bold text-gray-800">{monthGroup.monthName}</h2>
@@ -301,10 +313,10 @@ export default function Home() {
                        >
                          <div className="aspect-video overflow-hidden rounded-md mb-3">
                            <img 
-                             src={moment.mediaUrls[0] || moment.mediaUrl} 
-                             alt={moment.title}
-                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                           />
+                            src={(moment.mediaUrls?.length ? moment.mediaUrls[0] : null) || moment.mediaUrl || '/placeholder-image.jpg'} 
+                            alt={moment.title}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
                          </div>
                         <h4 className="font-semibold text-gray-800 mb-1">{moment.title}</h4>
                         <p className="text-sm text-gray-600 mb-2 line-clamp-2">{moment.description}</p>
@@ -336,9 +348,9 @@ export default function Home() {
                             )}
                           </span>
                           <div className="flex items-center space-x-2">
-                            {moment.mediaUrls.length > 1 && (
+                            {(moment.mediaUrls?.length || 0) > 1 && (
                               <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
-                                {moment.mediaUrls.length}张
+                                {moment.mediaUrls?.length || 0}张
                               </span>
                             )}
                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
