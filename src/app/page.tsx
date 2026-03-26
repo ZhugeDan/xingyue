@@ -2,21 +2,20 @@
 
 import './globals.css'
 import { useState, useEffect } from 'react'
-import { Plus, Camera, Video, Loader2, AlertCircle } from 'lucide-react'
+import { Plus, Camera, Video, Loader2, AlertCircle, Heart } from 'lucide-react'
 import ImageModal from '../components/ImageModal'
 import PermissionManager from '../components/PermissionManager'
 
-// 类型定义
 interface Moment {
   id: string
   date: string
   title: string
   description: string
   mediaType: 'photo' | 'video'
-  mediaUrl?: string // 兼容旧格式
-  mediaUrls: string[] // 支持多图片
-  uploadDate: string // 上传日期
-  captureDate?: string // 拍照日期（从EXIF提取）
+  mediaUrl?: string
+  mediaUrls?: string[]
+  uploadDate?: string
+  captureDate?: string
   exifData?: {
     camera?: string
     lens?: string
@@ -26,7 +25,6 @@ interface Moment {
   }
 }
 
-// 按月分组的数据结构
 interface MonthGroup {
   year: number
   month: number
@@ -35,29 +33,23 @@ interface MonthGroup {
   moments: Moment[]
 }
 
-
-
 export default function Home() {
   const [moments, setMoments] = useState<Moment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedMoment, setSelectedMoment] = useState<Moment | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [isAdmin, setIsAdmin] = useState(false) // 管理员权限状态
+  const [isAdmin, setIsAdmin] = useState(false)
 
-  // 权限变化处理
   const handlePermissionChange = (adminStatus: boolean) => {
     setIsAdmin(adminStatus)
   }
 
-  // 获取数据
   const fetchMoments = async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/moments')
-      if (!response.ok) {
-        throw new Error('获取数据失败')
-      }
+      if (!response.ok) throw new Error('获取数据失败')
       const data = await response.json()
       setMoments(data)
       setError(null)
@@ -68,43 +60,31 @@ export default function Home() {
     }
   }
 
-
-
-  // 按月分组函数
   const groupMomentsByMonth = (moments: Moment[]): MonthGroup[] => {
     const groups: { [key: string]: Moment[] } = {}
     
     moments.forEach(moment => {
-      // 优先使用拍摄日期，其次使用上传日期，最后使用原始日期
       const dateString = moment.captureDate || moment.uploadDate || moment.date
       const date = new Date(dateString)
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       
-      if (!groups[key]) {
-        groups[key] = []
-      }
+      if (!groups[key]) groups[key] = []
       groups[key].push(moment)
     })
     
-    // 转换为 MonthGroup 数组，过滤掉无效的分组
     const monthGroups: MonthGroup[] = Object.keys(groups)
       .map(key => {
         const [year, month] = key.split('-').map(Number)
         const momentsInMonth = groups[key].sort((a, b) => {
           const dateA = new Date(a.captureDate || a.uploadDate || a.date)
           const dateB = new Date(b.captureDate || b.uploadDate || b.date)
-          return dateA.getTime() - dateB.getTime() // 从早到晚排序，便于查看成长时间线
+          return dateA.getTime() - dateB.getTime()
         })
         
-        // 确保有有效的 moments
-        if (momentsInMonth.length === 0) {
-          return null
-        }
+        if (momentsInMonth.length === 0) return null
         
-        // 选择代表图片：优先选择第一个照片，如果没有照片则选择第一个视频
         const representativeImage = momentsInMonth.find(m => m.mediaType === 'photo') || momentsInMonth[0]
         
-        // 确保代表图片有效
         if (!representativeImage || (!representativeImage.mediaUrls?.length && !representativeImage.mediaUrl)) {
           return null
         }
@@ -117,9 +97,8 @@ export default function Home() {
           moments: momentsInMonth
         }
       })
-      .filter((group): group is MonthGroup => group !== null) // TypeScript类型守卫
+      .filter((group): group is MonthGroup => group !== null)
     
-    // 按时间倒序排列（最新的月份在前）
     return monthGroups.sort((a, b) => {
       if (a.year !== b.year) return b.year - a.year
       return b.month - a.month
@@ -132,7 +111,6 @@ export default function Home() {
     fetchMoments()
   }, [])
 
-  // 当 moments 数据更新时，重新分组
   useEffect(() => {
     if (moments.length > 0) {
       const grouped = groupMomentsByMonth(moments)
@@ -140,19 +118,16 @@ export default function Home() {
     }
   }, [moments])
 
-  // 打开图片模态框
   const openImageModal = (moment: Moment) => {
     setSelectedMoment(moment)
     setIsModalOpen(true)
   }
 
-  // 关闭图片模态框
   const closeImageModal = () => {
     setSelectedMoment(null)
     setIsModalOpen(false)
   }
 
-  // 下载图片
   const handleDownload = async (url: string, filename: string) => {
     try {
       const response = await fetch(url)
@@ -172,9 +147,7 @@ export default function Home() {
     }
   }
 
-  // 编辑记录 - 完整的编辑表单
   const handleEdit = (moment: Moment) => {
-    // 创建一个自定义的编辑表单
     const newTitle = prompt('编辑标题:', moment.title)
     if (newTitle === null || newTitle.trim() === '') return
 
@@ -200,7 +173,6 @@ export default function Home() {
       uploadDate: new Date(newUploadDate + 'T12:00:00Z').toISOString()
     }
 
-    // 只有当用户输入了拍照日期时才更新
     if (newCaptureDateInput && newCaptureDateInput.trim() !== '') {
       updates.captureDate = new Date(newCaptureDateInput + 'T12:00:00Z').toISOString()
     }
@@ -208,22 +180,14 @@ export default function Home() {
     updateMoment(moment.id, updates)
   }
 
-  // 更新记录
   const updateMoment = async (id: string, updates: Partial<Moment>) => {
     try {
       const response = await fetch(`/api/moments/${id}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
-
-      if (!response.ok) {
-        throw new Error('更新失败')
-      }
-
-      // 重新获取数据
+      if (!response.ok) throw new Error('更新失败')
       await fetchMoments()
       closeImageModal()
     } catch (err) {
@@ -231,18 +195,10 @@ export default function Home() {
     }
   }
 
-  // 删除记录
   const handleDelete = async (moment: Moment) => {
     try {
-      const response = await fetch(`/api/moments/${moment.id}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        throw new Error('删除失败')
-      }
-
-      // 重新获取数据
+      const response = await fetch(`/api/moments/${moment.id}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error('删除失败')
       await fetchMoments()
       closeImageModal()
     } catch (err) {
@@ -251,197 +207,175 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-blue-50 p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold text-gray-800 mb-4">
-            🌟 成长日记 🌟
-          </h1>
-          <p className="text-gray-600 mb-6 text-lg">
-            记录每一个珍贵的成长瞬间
-          </p>
-          
-          {/* 权限管理 */}
-          <div className="mb-6 flex justify-center">
-            <PermissionManager onPermissionChange={handlePermissionChange} />
+    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-pink-50 to-blue-50">
+      {/* 顶部导航栏 */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-100">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            {/* Logo */}
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-pink-400 to-rose-500 rounded-lg flex items-center justify-center">
+                <Heart className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-xl font-bold bg-gradient-to-r from-pink-500 to-rose-500 bg-clip-text text-transparent">
+                成长日记
+              </span>
+            </div>
+
+            {/* 右侧操作区 */}
+            <div className="flex items-center gap-3">
+              <PermissionManager onPermissionChange={handlePermissionChange} />
+              <button
+                onClick={() => window.location.href = '/upload'}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-full text-sm font-medium transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                记录
+              </button>
+            </div>
           </div>
-          
-          <button
-            onClick={() => window.location.href = '/upload'}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-full hover:from-blue-700 hover:to-purple-700 transition-all transform hover:scale-105 flex items-center gap-2 mx-auto"
-          >
-            <Plus className="w-5 h-5" />
-            家人上传
-          </button>
         </div>
+      </header>
 
-
+      {/* 主内容区 */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* 欢迎语 */}
+        <div className="text-center mb-10">
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3">
+            记录成长的每一个瞬间
+          </h1>
+          <p className="text-gray-500 text-lg">
+            已保存 <span className="font-semibold text-pink-500">{moments.length}</span> 个珍贵时刻
+          </p>
+        </div>
 
         {/* 错误提示 */}
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-red-600" />
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 flex items-center gap-3">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
             <span className="text-red-700">{error}</span>
           </div>
         )}
 
         {/* 加载状态 */}
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-            <span className="ml-2 text-gray-600">加载中...</span>
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-10 h-10 animate-spin text-pink-500" />
+            <span className="mt-4 text-gray-500">加载中...</span>
           </div>
         ) : (
           <>
             {/* 按月分组展示 */}
-            <div className="space-y-12">
+            <div className="space-y-8">
               {monthGroups.map((monthGroup) => (
-                <div key={`${monthGroup.year}-${monthGroup.month}`} className="bg-white rounded-xl shadow-lg p-6">
-                  {/* 月份标题和代表图片 */}
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center space-x-4">
+                <section key={`${monthGroup.year}-${monthGroup.month}`} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  {/* 月份标题 */}
+                  <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
                       <div 
-                         className="aspect-square w-24 h-24 rounded-lg overflow-hidden shadow-md cursor-pointer group"
-                         onClick={() => openImageModal(monthGroup.representativeImage)}
-                         title="点击查看大图"
-                       >
-                         <img 
+                        className="w-16 h-16 rounded-xl overflow-hidden cursor-pointer ring-2 ring-transparent hover:ring-pink-200 transition-all"
+                        onClick={() => openImageModal(monthGroup.representativeImage)}
+                      >
+                        <img 
                           src={(monthGroup.representativeImage.mediaUrls?.length ? monthGroup.representativeImage.mediaUrls[0] : null) || monthGroup.representativeImage.mediaUrl || '/placeholder-image.jpg'} 
                           alt={monthGroup.representativeImage.title}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 cursor-zoom-in"
+                          className="w-full h-full object-cover hover:scale-110 transition-transform duration-500"
                         />
-                       </div>
-                      <div>
-                        <h2 className="text-2xl font-bold text-gray-800">{monthGroup.monthName}</h2>
-                        <p className="text-gray-600">
-                          共 {monthGroup.moments.length} 个珍贵瞬间
-                        </p>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-500">
-                        代表图片：{monthGroup.representativeImage.title}
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-900">{monthGroup.monthName}</h2>
+                        <p className="text-sm text-gray-500">
+                          {monthGroup.moments.length} 个瞬间
+                        </p>
                       </div>
                     </div>
                   </div>
                   
                   {/* 该月的所有时刻 */}
-                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                     {monthGroup.moments.map((moment) => (
-                       <div 
-                         key={moment.id} 
-                         className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-all cursor-pointer group"
-                         onClick={() => openImageModal(moment)}
-                       >
-                         <div className="aspect-video overflow-hidden rounded-md mb-3">
-                           <img 
-                            src={(moment.mediaUrls?.length ? moment.mediaUrls[0] : null) || moment.mediaUrl || '/placeholder-image.jpg'} 
-                            alt={moment.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                         </div>
-                        <h4 className="font-semibold text-gray-800 mb-1">{moment.title}</h4>
-                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">{moment.description}</p>
-                        
-                        {/* 日期信息显示 */}
-                        <div className="space-y-1 mb-3">
-                          {moment.captureDate && (
-                            <div className="flex items-center text-xs text-blue-600">
-                              <Camera className="w-3 h-3 mr-1" />
-                              拍摄: {new Date(moment.captureDate).toLocaleDateString('zh-CN', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
-                            </div>
-                          )}
-                          <div className="flex items-center text-xs text-gray-500">
-                            <Plus className="w-3 h-3 mr-1" />
-                            上传: {new Date(moment.uploadDate).toLocaleDateString('zh-CN', {
-                              month: 'short',
-                              day: 'numeric'
-                            })}
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-500">
-                            {moment.exifData?.camera && (
-                              <span className="text-gray-400">{moment.exifData.camera}</span>
-                            )}
-                          </span>
-                          <div className="flex items-center space-x-2">
-                            {(moment.mediaUrls?.length || 0) > 1 && (
-                              <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">
-                                {moment.mediaUrls?.length || 0}张
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {monthGroup.moments.map((moment) => (
+                        <div 
+                          key={moment.id} 
+                          className="group bg-gray-50 rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all duration-300"
+                          onClick={() => openImageModal(moment)}
+                        >
+                          {/* 图片区域 */}
+                          <div className="aspect-[4/3] overflow-hidden relative">
+                            <img 
+                              src={(moment.mediaUrls?.length ? moment.mediaUrls[0] : null) || moment.mediaUrl || '/placeholder-image.jpg'} 
+                              alt={moment.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                            {/* 类型标签 */}
+                            <div className="absolute top-3 right-3">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium backdrop-blur-sm ${
+                                moment.mediaType === 'photo' 
+                                  ? 'bg-white/90 text-blue-600' 
+                                  : 'bg-white/90 text-purple-600'
+                              }`}>
+                                {moment.mediaType === 'photo' ? (
+                                  <><Camera className="w-3 h-3 mr-1" /> 照片</>
+                                ) : (
+                                  <><Video className="w-3 h-3 mr-1" /> 视频</>
+                                )}
                               </span>
+                            </div>
+                            {/* 多张图片标记 */}
+                            {(moment.mediaUrls?.length || 0) > 1 && (
+                              <div className="absolute top-3 left-3 bg-black/50 backdrop-blur-sm text-white px-2 py-1 rounded-full text-xs">
+                                {moment.mediaUrls?.length} 张
+                              </div>
                             )}
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              moment.mediaType === 'photo' 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : 'bg-purple-100 text-purple-800'
-                            }`}>
-                              {moment.mediaType === 'photo' ? (
-                                <><Camera className="w-3 h-3 mr-1" /> 照片</>
-                              ) : (
-                                <><Video className="w-3 h-3 mr-1" /> 视频</>
+                          </div>
+                          
+                          {/* 信息区域 */}
+                          <div className="p-4">
+                            <h4 className="font-semibold text-gray-900 mb-1 truncate">{moment.title}</h4>
+                            <p className="text-sm text-gray-500 line-clamp-2 mb-3">{moment.description}</p>
+                            
+                            {/* 日期信息 */}
+                            <div className="flex items-center gap-3 text-xs text-gray-400">
+                              {moment.captureDate && (
+                                <span className="flex items-center">
+                                  <Camera className="w-3 h-3 mr-1" />
+                                  {new Date(moment.captureDate).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                                </span>
                               )}
-                            </span>
+                              <span className="flex items-center">
+                                <Plus className="w-3 h-3 mr-1" />
+                                {new Date(moment.uploadDate || moment.date).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
+                </section>
               ))}
             </div>
 
             {/* 空状态 */}
             {moments.length === 0 && (
-              <div className="text-center py-12">
-                <div className="text-6xl mb-4">📝</div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">还没有记录</h3>
-                <p className="text-gray-500">点击上方按钮添加第一个成长记录吧！</p>
-              </div>
-            )}
-            
-            {/* 月份分组空状态 */}
-            {moments.length > 0 && monthGroups.length === 0 && (
-              <div className="text-center py-12">
-                <div className="text-6xl mb-4">🗓️</div>
-                <h3 className="text-xl font-semibold text-gray-700 mb-2">加载中...</h3>
-                <p className="text-gray-500">正在整理成长记录...</p>
+              <div className="text-center py-20">
+                <div className="w-20 h-20 bg-pink-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Camera className="w-10 h-10 text-pink-500" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">还没有记录</h3>
+                <p className="text-gray-500 mb-6">开始记录宝宝的成长瞬间吧</p>
+                <button
+                  onClick={() => window.location.href = '/upload'}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-full font-medium transition-all"
+                >
+                  <Plus className="w-5 h-5" />
+                  添加第一条记录
+                </button>
               </div>
             )}
           </>
         )}
-
-        {/* 项目配置 */}
-        <div className="mt-12 bg-white p-8 rounded-xl shadow-lg">
-          <h2 className="text-2xl font-bold text-center mb-6 text-gray-800">📊 项目配置</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            <div className="text-center">
-              <div className="text-3xl mb-2">⚡</div>
-              <div className="font-semibold text-gray-700">Next.js 16.1.1</div>
-              <div className="text-sm text-gray-500">现代化框架</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl mb-2">🎨</div>
-              <div className="font-semibold text-gray-700">Tailwind CSS v4</div>
-              <div className="text-sm text-gray-500">样式框架</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl mb-2">📱</div>
-              <div className="font-semibold text-gray-700">响应式设计</div>
-              <div className="text-sm text-gray-500">移动端友好</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl mb-2">🔧</div>
-              <div className="font-semibold text-gray-700">TypeScript</div>
-              <div className="text-sm text-gray-500">类型安全</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      </main>
 
       {/* 图片预览模态框 */}
       <ImageModal
